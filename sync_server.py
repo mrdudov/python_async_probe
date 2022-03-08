@@ -1,36 +1,50 @@
 import socket
+from select import select
 
 """
 nc localhost 5000
 """
 
-HOST = 'localhost'
-PORT = 5000
+CONNECTION = ('localhost', 5000)
+
+to_monitor = []
 
 
-def get_server_socket(host, port):
+def get_server_socket(connection):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((host, port))
+    server_socket.bind(connection)
     server_socket.listen()
     return server_socket
 
 
-server_socket = get_server_socket(host=HOST, port=PORT)
+def accept_connsction(in_socket):
+    client_socket, address = in_socket.accept()
+    print(f'connection from {address}')
+    to_monitor.append(client_socket)
 
-while True:
-    print('Before accept()')
-    client_socket, address = server_socket.accept()
-    print(f'Connection from {address}')
 
+def send_message(client_socket):
+    request = client_socket.recv(4096)
+
+    if request:
+        response = 'Hello world\n'.encode()
+        client_socket.send(response)
+    else:
+        client_socket.close()
+
+
+def event_loop():
     while True:
-        request = client_socket.recv(4096)
+        ready_to_read, _, _ = select(to_monitor, [], [])
+        for sock in ready_to_read:
+            if sock is server_socket:
+                accept_connsction(sock)
+            else:
+                send_message(sock)
 
-        if not request:
-            break
-        else:
-            response = 'Hello world\n'.encode()
-            client_socket.send(response)
-    
-    print('outside inner while True loop')
-    client_socket.close()
+
+if __name__ == '__main__':
+    server_socket = get_server_socket(connection=CONNECTION)
+    to_monitor.append(server_socket)
+    event_loop()
