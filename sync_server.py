@@ -1,5 +1,5 @@
 import socket
-from select import select
+import selectors
 
 """
 nc localhost 5000
@@ -7,7 +7,7 @@ nc localhost 5000
 
 CONNECTION = ('localhost', 5000)
 
-to_monitor = []
+selector = selectors.DefaultSelector()
 
 
 def get_server_socket(connection):
@@ -15,13 +15,21 @@ def get_server_socket(connection):
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind(connection)
     server_socket.listen()
-    return server_socket
+    selector.register(
+        fileobj=server_socket,
+        events=selectors.EVENT_READ,
+        data=accept_connsction
+    )
 
 
 def accept_connsction(in_socket):
     client_socket, address = in_socket.accept()
     print(f'connection from {address}')
-    to_monitor.append(client_socket)
+    selector.register(
+        fileobj=client_socket,
+        events=selectors.EVENT_READ,
+        data=send_message
+    )
 
 
 def send_message(client_socket):
@@ -31,20 +39,18 @@ def send_message(client_socket):
         response = 'Hello world\n'.encode()
         client_socket.send(response)
     else:
+        selector.unregister(client_socket)
         client_socket.close()
 
 
 def event_loop():
     while True:
-        ready_to_read, _, _ = select(to_monitor, [], [])
-        for sock in ready_to_read:
-            if sock is server_socket:
-                accept_connsction(sock)
-            else:
-                send_message(sock)
+        events = selector.select()
+        for key, _ in events:
+            callback = key.data
+            callback(key.fileobj)
 
 
 if __name__ == '__main__':
-    server_socket = get_server_socket(connection=CONNECTION)
-    to_monitor.append(server_socket)
+    get_server_socket(connection=CONNECTION)
     event_loop()
